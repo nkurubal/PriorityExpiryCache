@@ -6,8 +6,10 @@ Unittest: Use the following command to run  the unittests -
 
 """
 
+import sys
 from min_heap import MinHeap, MinHeapNode
 from typing import Any
+import logging
 
 
 class CacheSlot:
@@ -111,6 +113,20 @@ class PriorityExpiryCache:
         # The implementation is documented in the respective code file
         self.min_expire_heap = MinHeap()
 
+        # setup logging. Disable debug level
+        self.logger = self.__setup_logging()
+
+    def __setup_logging(self) -> logging.Logger:
+
+        logger = logging.getLogger(__name__)
+        # change level to debug when in development.
+        logger.setLevel(logging.CRITICAL)
+        handler = logging.StreamHandler(stream=sys.stdout)
+        handler.setFormatter(logging.Formatter(
+            fmt='[%(asctime)s: %(levelname)s] %(message)s'))
+        logger.addHandler(handler)
+        return logger
+
     def _remove_slot(self, slot: CacheSlot) -> None:
         """
         Removes the given cache slot from the priority bucket.  
@@ -120,7 +136,10 @@ class PriorityExpiryCache:
         """
 
         try:
+
             priority = slot.priority
+
+            self.logger.debug(f"Removing item {slot.key} from {priority}")
 
             # O(1) lookup. If the priority is empty, something went worng!
             # Program must error out!
@@ -132,7 +151,8 @@ class PriorityExpiryCache:
             priority_bucket = self.priority_buckets[priority]
 
             if not priority_bucket.cache_line_size:
-                raise Exception(f"Priority bucket {priority} is empty, cannot remove from an empty cache line")
+                raise Exception(
+                    f"Priority bucket {priority} is empty, cannot remove from an empty cache line")
 
             # remove the slot from the list
             # connect the next and previous slots in list
@@ -160,7 +180,10 @@ class PriorityExpiryCache:
         @return: None
         """
         try:
+            self.logger.debug(f"Adding {slot.key} to priority {priority} ")
             if slot.priority not in self.priority_buckets:
+                self.logger.debug(
+                    f"Adding priority {priority} top priority buckets")
                 # create a new priority bucket
                 self.priority_buckets[priority] = PriorityBucket(priority)
                 # insert the priority to the heap
@@ -197,6 +220,8 @@ class PriorityExpiryCache:
         """
         try:
 
+            self.logger.debug(f"Evicting from priority {priority}")
+
             if priority not in self.priority_buckets:
                 raise ValueError(
                     f"priority bucket: {priority} does not exist in the system. Trying to evict slot from a non existent priority bucket.")
@@ -213,8 +238,10 @@ class PriorityExpiryCache:
             slot_to_evict = priority_bucket.tail.prev
 
             self._remove_slot(slot_to_evict)
-            # if there are no more items belonging to the bucket - delete it! 
+            # if there are no more items belonging to the bucket - delete it!
             if not priority_bucket.cache_line_size:
+                self.logger.debug(
+                    f"Removing priority bucket {priority_bucket.priority}")
                 # Time complexity of deleting from min priority heap is a O(logM).
                 # where M is the number of priority buckets in the cache system. [upto 2^32]
                 self.min_priority_heap.delete(priority_bucket.heap_index)
@@ -230,6 +257,7 @@ class PriorityExpiryCache:
 
             # remove the key from the key_map
             # O(1)
+            self.logger.debug(f"Evicted {slot_to_evict.key}")
             del self.key_map[slot_to_evict.key]
 
         except:
@@ -248,19 +276,24 @@ class PriorityExpiryCache:
             else: (False, None)
         """
         try:
+            self.logger.debug(f"Get {key} current time = {current_time}")
             # if the key exists in the cache, return the value only if it is not expired
             # O(1)
             if key in self.key_map:
+                self.logger.debug(f"Get {key} found")
                 slot = self.key_map[key]
                 # Only return the value if the expiration time >= currentTime
                 if slot.expire >= current_time:
+                    self.logger.debug(f"Get {key} not expired")
                     # move the slot to head of priority bucket
                     # O(1)
                     self._remove_slot(slot)
                     self._add_slot_to_head(slot, slot.priority)
                     return True, self.key_map[key].value
+                self.logger.debug(f"Get {key} expired")
 
-            # if the key does not exist return None
+            # if the key does not exist or expired return None
+            self.logger.debug(f"Get {key} not found/ expired")
             return False, None
         except:
             raise
@@ -284,12 +317,15 @@ class PriorityExpiryCache:
         """
         try:
 
+            self.logger.debug(f"Ready to evict, current_time = {current_time}")
+
             if self.min_expire_heap.peek() == -1:
                 raise Exception(
                     f"Oops something went wrong! No item in expiry min heap! This should not have happened.")
 
             # Check if any cache item is expired.
             if self.min_expire_heap.peek().key < current_time:
+                self.logger.debug(f"Found expired cache slot")
                 # pop top the min expire heap node. This is the node that has expired.
                 min_heap_node = self.min_expire_heap.pop()
                 expired_cahe_slot = min_heap_node.node
@@ -299,8 +335,10 @@ class PriorityExpiryCache:
 
                 priority_bucket = self.priority_buckets[expired_cahe_slot.priority]
 
-                # if there are no more items belonging to the bucket - delete it! 
+                # if there are no more items belonging to the bucket - delete it!
                 if not priority_bucket.cache_line_size:
+                    self.logger.debug(
+                        f"Removing priority bucket {priority_bucket.priority}")
                     # Time complexity of deleting from min priority heap is a O(logM).
                     # where M is the number of priority buckets in the cache system. [upto 2^32]
                     self.min_priority_heap.delete(priority_bucket.heap_index)
@@ -310,8 +348,13 @@ class PriorityExpiryCache:
                 self.free_list.append(expired_cahe_slot)
                 # remove the key from the key_map
                 del self.key_map[expired_cahe_slot.key]
+
+                self.logger.debug(
+                    f"Expired key {expired_cahe_slot.key} evicted.")
                 return
 
+            self.logger.debug(
+                f"No Expired cache slot found, evicting from least priority")
             # No keys have expired, so evict LRU cache slot from the lowest priority bucket
             least_priority_node = self.min_priority_heap.peek()
             if least_priority_node == -1:
@@ -339,7 +382,7 @@ class PriorityExpiryCache:
         try:
             # if the key already exists in the cache
             if key in self.key_map:
-
+                self.logger.debug(f"Updating key {key}")
                 slot = self.key_map[key]
 
                 # remove the slot from the previous priority
@@ -347,7 +390,7 @@ class PriorityExpiryCache:
 
                 priority_bucket = self.priority_buckets[slot.priority]
 
-                # if there are no more items belonging to the bucket - delete it! 
+                # if there are no more items belonging to the bucket - delete it!
                 if not priority_bucket.cache_line_size:
                     # Time complexity of deleting from min priority heap is a O(logM).
                     # where M is the number of priority buckets in the cache system. [upto 2^32]
@@ -355,7 +398,8 @@ class PriorityExpiryCache:
                     del self.priority_buckets[priority_bucket.priority]
 
                 # initialize the slot again with new values
-                slot.initialize_slot(key, value, priority, current_time + expire)
+                slot.initialize_slot(key, value, priority,
+                                     current_time + expire)
 
                 # delete the previous expire time of the slot from the heap
                 # O(logN) operation
@@ -372,21 +416,27 @@ class PriorityExpiryCache:
 
             # key does not exist in the cache
             if not self.free_list:
+                self.logger.debug(f"No free cache slots. Evict")
                 self._evict_item(current_time)
 
             if not self.free_list:
-                raise Exception("something went wrong in eviction! Could not get the free slot.")
+                raise Exception(
+                    "something went wrong in eviction! Could not get the free slot.")
 
             cache_slot = self.free_list.pop()
-            cache_slot.initialize_slot(key, value, priority, current_time + expire)
+            cache_slot.initialize_slot(
+                key, value, priority, current_time + expire)
 
             # add the slot to the head of the priority bucket
             self._add_slot_to_head(cache_slot, priority)
+
+            self.logger.debug(f"key {key} add to the cache.")
             self.key_map[key] = cache_slot
 
             # add slot ot min expiry heap
             # O(logN)
-            self.min_expire_heap.add(MinHeapNode(cache_slot.expire, cache_slot))
+            self.min_expire_heap.add(
+                MinHeapNode(cache_slot.expire, cache_slot))
 
         except:
             raise
@@ -419,66 +469,8 @@ class PriorityExpiryCache:
             raise
 
     def keys(self):
-
         """
         Return the keys if the items stored in cache.
         """
 
         return list(self.key_map.keys())
-
-
-c = PriorityExpiryCache(5)
-
-c.set(key="A", value=1, priority=5, expire=100, current_time=0)
-c.set(key="B", value=2, priority=15, expire=3, current_time=1)
-print(c.get("B", current_time=3))
-c.set(key="C", value="blah", priority=5, expire=40, current_time=6)
-print(c.get(key="A", current_time=7))
-c.set(key="D", value=3, priority=20, expire=50, current_time=7)
-print(c.get(key="B", current_time=8))
-c.set(key="A", value=1, priority=20, expire=100, current_time=9)
-c.set(key="C", value="blah", priority=20, expire=40, current_time=10)
-c.set(key="E", value='E', priority=20, expire=40, current_time=11)
-print("No eviction till this point")
-print(c.get(key="B", current_time=11))
-print(c.get(key="A", current_time=11))
-print(c.get(key="C", current_time=11))
-print(c.get(key="D", current_time=11))
-print(c.get(key="E", current_time=11))
-
-print("Eviction Starts")
-c.set(key="G", value=2, priority=20, expire=70, current_time=13)
-print(c.get(key="B", current_time=13))
-c.set(key="F", value=2, priority=1, expire=70, current_time=14)
-print(c.get(key="G", current_time=15))
-print(c.get(key="A", current_time=15))
-print(c.get(key="C", current_time=15))
-print(c.get(key="D", current_time=15))
-print(c.get(key="E", current_time=15))
-
-c = PriorityExpiryCache(5)
-c.set("A", value=1, priority=5, expire=100, current_time=0)
-c.set("B", value=2, priority=15, expire=3, current_time=0)
-c.set("C", value=3, priority=5, expire=10, current_time=0)
-c.set("D", value=4, priority=1, expire=15, current_time=0)
-c.set("E", value=5, priority=5, expire=150, current_time=0)
-print(c.get("C", current_time=0))
-# Current time = 0
-c.set_max_items(5, current_time=0)
-print(c.keys())  # ["A", "B", "C", "D", "E"]
-# space for 5 keys, all 5 items are included
-# Current time = 5
-c.set_max_items(4, current_time=5)
-print(c.keys())  # ["A", "C", "D", "E"]
-# // "B" is removed because it is expired.  expiry 3 < 5
-c.set_max_items(3, current_time=5)
-print(c.keys())  # ["A", "C", "E"]
-# // "D" is removed because it the lowest priority
-# // D's expire time is irrelevant.
-c.set_max_items(2, current_time=5)
-print(c.keys())  # ["C", "E"]
-# // "A" is removed because it is least recently used."
-# // A's expire time is irrelevant.
-c.set_max_items(1, current_time=5)
-print(c.keys())
-# c.Keys() = ["C"]
