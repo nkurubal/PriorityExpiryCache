@@ -1,0 +1,45 @@
+    - For Get we want the time complexity to be O(1). 
+    Since we needed a fast lookup, the best data structure to use is a HashTable. 
+    Hence, we are using a python dictionary to store the key and the pointer to the cache slot it is stored in.
+
+    - For eviction, we needed to first look at if any of the cache items have expired. 
+    Hence, at any given point we want to be able to find the least expiry time among all the cache 
+    items. 
+
+    - The first data structure I thought of was a priority queue. Insertion and popping of the minimum
+    element in a priority queue is O(LogN) and check the minimum is a O(1).
+    However, this structure gets inefficient during an update operation in cache, as we will
+    have to remove the old expiry time of the item from the priority queue. 
+    This takes O(N) time for search operation in the min heap and O(LogN) for deletion. 
+    Clearly this is not something we want to do in a real time system with a lot of updates. 
+    
+    - One of the best Data Structures, that could make search, insertion and deletion O(logN) is a BST.
+    However, just a BST will not serve our purpose as the worst case time complexity BST is O(N).
+    Hence, using a self-balancing BST like Red-Black Trees might be the best choice as it achieves O(logN) complexity
+    for search, deletion and insertion and is also space efficient. Minimum element is just leftmost node in the tree.
+    
+    - However, python does not have any library for BST. In other languages like C++ or Java, sorted sets are
+    implemented as Red-Black trees and using such data structures might be the best option.
+    Upon some research I identified that python has a sorted container library that provides O(logN)
+    time complexity for insertion, deletion and search. However, the implementation details of this library
+    is much different as compared to sorted set implementation C++. But I already had an idea in my mind
+    and thought of implementing it to check how that would work.
+    
+    - I thought another way to achieve deletion of an item from minHeap in O(logN) time. This could be done by
+    an extra booking keeping variable to keep track of the index where the cache slot is stored in the heap.
+    However, python heapq does not provide delete function. Thus, I decided to implement a simple customized
+    min heap data structure along with a delete function. It serverd the purpose well!
+
+    - If there is no expired cache slot, we need to evict the least recently used item from the least priority bucket.
+    The best way to keep track of the least recently used element is to use a doubly linked list as it provides O(1)
+    insertion and deletion. Hence, everytime an item is used we remove the element from its original place in the
+    linked list and add to the head. The least recently used element is then the tail of the list. All of these operations happen in O(1).
+
+    - For keeping track of the minimum priority in the cache system, we again need an efficient structure that has reasonable time and space complexity.
+    Here again the argument is similar to the expiry case. With one extra requirement, we also need the search to be O(logN).
+    Hence, every time to insert an element we will have to search for the priority bucket in the heap it is an O(N) operation.
+    This is very inefficient. Clearly, the best choice here again is a Red-Black Tree.
+    But another consideration is do we need to do a O(logN) search everytime we want to add an element?
+    If we can afford some extra space to store a lookup table for our priority buckets, most set operations
+    will have a time complexity of O(1)- if the priority bucket already exists in the system and O(logN)
+    when the priority is supposed to inserted to the heap. For my implementation, I chose the latter as explained in the expiry section.
